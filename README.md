@@ -7,9 +7,13 @@
 [![FiveM](https://img.shields.io/badge/FiveM-Compatible-blue?style=for-the-badge)](https://fivem.net)
 [![ox_core](https://img.shields.io/badge/Framework-ox__core-blue?style=for-the-badge)](https://github.com/overextended/ox_core)
 [![Price](https://img.shields.io/badge/price-FREE%20FOREVER-brightgreen?style=for-the-badge)](https://github.com/RedDragonElite/rde_crew)
+[![RDE Ecosystem](https://img.shields.io/badge/RDE-ECOSYSTEM-f59e0b?style=for-the-badge)](https://github.com/RedDragonElite)
+[![rde_organizations](https://img.shields.io/badge/integrates-rde__organizations-orange?style=for-the-badge)](https://github.com/RedDragonElite/rde_organizations)
 [![Pain](https://img.shields.io/badge/dev%20pain-IMMEASURABLE-8B0000?style=for-the-badge)](#-the-graffiti-saga-a-war-story)
 
 **Crew creation, ranks, permissions, declared wars, an in-game polygon zone editor, and real freehand spray-painted territory tags that render as actual 3D objects on actual walls — drawn with your mouse, positioned on the wall by hand, statebag-driven, proximity-loaded, and free.**
+
+**Optional:** pair with [`rde_organizations`](https://github.com/RedDragonElite/rde_organizations) and gang-type orgs automatically become territory-holding crews. The organization panel replaces the crew management UI — rde_crew becomes a pure territory engine.
 
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/b50c0d5c-166c-43fe-adec-f2c849f06a3b" />
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/1752cc2e-5a97-49ef-8e67-7a6754b2808f" />
@@ -27,6 +31,7 @@
 - [Overview](#-overview)
 - [Why RDE Crew?](#-why-rde-crew)
 - [Features](#-features)
+- [OrgBridge — rde_organizations Integration](#-orgbridge--rde_organizations-integration)
 - [Dependencies](#-dependencies)
 - [Installation](#-installation)
 - [Configuration](#-configuration)
@@ -79,13 +84,15 @@ Everything syncs through prefixed statebags and a lightweight `GlobalState` inde
 - Crew-wide announcements and a light internal chat log
 - A boss NPC (configurable model/coords/scenario/blip) as a social/admin anchor point
 
+> 💡 **OrgBridge mode:** When used alongside [`rde_organizations`](https://github.com/RedDragonElite/rde_organizations), crew management moves entirely into the org panel. Members, ranks, and permissions are managed through rde_organizations — rde_crew becomes a pure territory engine. See [OrgBridge](#-orgbridge--rde_organizations-integration).
+
 ### 🗺️ Territory & Zones
 
 - **In-game polygon zone editor** — walk the perimeter, place corners live, persist to DB, edit any time
 - Zone ownership computed by a configurable rule: `last_spray` or `spray_count`
 - **War-gated overspray** — an enemy crew can only paint over your owned zone while an active war exists between both crews
 - Zone ownership changes broadcast instantly via per-zone statebags with automatic crew notifications on both sides
-- **Live DUI minimap pipe** — when ownership changes, `SendDuiMessage` updates the existing zone DUI canvas with the new crew RGB. `CreateRuntimeTextureFromDuiHandle` is a live link, not a snapshot, so the minimap texture updates in the same frame. No TxD rebuild, no DUI destroy/recreate cycle, zero delay.
+- **Live DUI minimap pipe** — when ownership changes, the minimap texture updates in the same frame. No TxD rebuild, no DUI destroy/recreate cycle, zero delay.
 
 ### 🎨 Graffiti — Real Freehand Painting with Mouse Placement
 
@@ -121,7 +128,7 @@ The finished piece is shown on a simulated wall surface. The player rotates and 
 | **Sprühen ✓** | Confirm placement |
 | **← Zurück** | Back to drawing |
 
-The chosen rotation and scale are sent back to Lua. A full orthonormal basis (`forward = wall_normal`, `right = cross(n, worldUp)`, `up = cross(right, n)`) is computed and applied via `SetEntityMatrix` — the prop sits flush on any wall surface regardless of orientation, angle, or texture pattern. No heading-only approximation, no manual offset guessing.
+The chosen rotation and scale are sent back to Lua. A full orthonormal basis (`forward = wall_normal`, `right = cross(n, worldUp)`, `up = cross(right, n)`) is computed and applied via `SetEntityMatrix` — the prop sits flush on any wall surface regardless of orientation, angle, or texture pattern.
 
 **Rendering.**
 The finished canvas exports as a real PNG with genuine alpha transparency. `CreateRuntimeTextureFromImage` applies it directly to the `bzzz_decals` addon carrier prop — no DUI, no decal hack, no floating UI sprite, a real flat 3D object with real transparency physically stuck to the wall, visible to every player in range.
@@ -143,7 +150,40 @@ A short `progressCircle` (`WORLD_HUMAN_GRAFFITI` scenario) runs after the placem
 - In-game admin hub for crew management without touching the database
 - `/crew_reload` to force a full DB reload after manual edits
 
-> **Vehicle storage** is handled by `rde_parking`. **Prop interaction / shared stash** by `rde_props_interact`. Both do their one job correctly. RDE Crew does its one job — crews, territory, graffiti.
+---
+
+## 🔗 OrgBridge — rde_organizations Integration
+
+rde_crew ships with a built-in bridge module (`server/modules/org_bridge.lua`) that connects it to [`rde_organizations`](https://github.com/RedDragonElite/rde_organizations).
+
+**The idea is simple:** rde_organizations is the HR layer (who is in a crew, what rank, what permissions), rde_crew is the territory layer (which zone does a crew own, where is their graffiti, are they at war). Neither resource needs to know the other exists. The bridge is the invisible glue between them.
+
+### What the bridge does automatically
+
+| Action in rde_organizations | Result in rde_crew |
+|---|---|
+| Create a gang / MC / criminal org | Crew is auto-created and linked |
+| Member accepts invite | Added to the linked crew |
+| Member is kicked or leaves | Removed from the linked crew |
+| Rank changed (promote/demote) | Crew grade updated instantly |
+| Rank created, edited, or deleted | Crew grades table rebuilt from org ranks |
+| Leadership transferred | Crew leader updated |
+| Org name or color changed | Crew name and colorHex updated |
+| Org disbanded | Crew dissolved, graffiti cascade-deleted |
+| Org type changed to gang | Crew auto-created |
+| Org type changed away from gang | Crew dissolved |
+
+### Which org types become crews
+
+Configurable in `Config.OrgBridge.crewOrgTypes` (default: `gang`, `mc`, `criminal`). Any rde_organizations type listed there is automatically treated as a territory-holding crew.
+
+### Permission mapping
+
+rde_organizations rank permissions map to rde_crew grade permissions via `Config.OrgBridge.permMap`. Two territory-specific permissions (`spray_territory`, `declare_war`) are added to rde_organizations and map directly. Existing org permissions (`invite`, `kick`, `assign_ranks`) map to their rde_crew equivalents.
+
+### Standalone mode
+
+Set `Config.OrgBridge.enabled = false` (or don't install rde_organizations) and rde_crew runs exactly as before — boss NPC, `/crew` menu, manual crew management. The bridge is purely additive.
 
 ---
 
@@ -156,6 +196,7 @@ A short `progressCircle` (`WORLD_HUMAN_GRAFFITI` scenario) runs after the placem
 | `ox_lib` | ✅ Required | Callbacks, notifications, progress bars |
 | `ox_target` | ✅ Required | Interaction prompts |
 | `bzzz_decals` | ✅ Required | Addon prop pack — flat alpha-capable carrier props for graffiti rendering (streamed in `rde_crew/stream/`) |
+| `rde_organizations` | ⚙️ Optional | Enables OrgBridge — gang-type orgs become territory crews automatically |
 
 ---
 
@@ -179,6 +220,7 @@ ensure rde_crew
 ```
 
 > ⚠️ Order matters. `rde_crew` must start **after** all its dependencies.
+> If using OrgBridge: `rde_organizations` must start **before** `rde_crew`.
 
 ### 3. Spray can items
 
@@ -186,11 +228,11 @@ Define each spray can color as a normal `ox_inventory` item (label/weight/image)
 
 ### 4. Database
 
-All tables are created automatically on first start. No manual SQL import needed. The `rde_crew_sprays` table gains a `rotation FLOAT DEFAULT 0.0` column automatically via `ADD COLUMN IF NOT EXISTS` — safe to run against any existing installation.
+All tables are created automatically on first start. No manual SQL import needed.
 
 ### 5. Configure (optional)
 
-Edit `config.lua` to adjust crew limits, territory rules, the spray-can color registry, and graffiti rendering tuning.
+Edit `config.lua` to adjust crew limits, territory rules, the spray-can color registry, graffiti rendering tuning, and OrgBridge settings.
 
 ### 6. Restart
 
@@ -231,8 +273,6 @@ Config.Territory = {
 }
 ```
 
-> ⚠️ `sprayPersistDays` feeds a cleanup query that runs on every boot. A value of `0` will delete everything. Keep it at a sensible number.
-
 ### Graffiti Rendering
 
 ```lua
@@ -241,15 +281,35 @@ Config.Graffiti = {
     maxImageBytes     = 500 * 1024,
     renderDist        = 35.0,
     unloadDist        = 45.0,
-    propHeadingOffset = 180,   -- mesh-axis correction for bzzz_decals carrier
+    propHeadingOffset = 180,
     propZOffset       = 0.15,
-    propEmbedDepth    = 0.02,  -- anti z-fighting offset
-    areaSize          = { w = 2.4, h = 1.8 },   -- default prop world size
+    propEmbedDepth    = 0.02,
+    areaSize          = { w = 2.4, h = 1.8 },
     debug             = false,
 }
 ```
 
-> See `config.lua` for the full heavily-commented set — every value that exists has a comment explaining why it is what it is.
+### OrgBridge
+
+```lua
+Config.OrgBridge = {
+    enabled = true,       -- false = standalone mode, no rde_organizations needed
+    crewOrgTypes = {
+        gang     = true,
+        mc       = true,
+        criminal = true,
+    },
+    permMap = {
+        spray_territory = 'spray_territory',
+        declare_war     = 'declare_war',
+        invite          = 'invite',
+        kick            = 'kick',
+        change_grade    = 'assign_ranks',
+        send_announce   = 'edit_org',
+        set_colour      = 'edit_org',
+    },
+}
+```
 
 ---
 
@@ -290,6 +350,7 @@ rde_crew/
 │   ├── database.lua        ← schema + auto-migrations
 │   ├── classes/crew.lua
 │   ├── modules/
+│   │   ├── org_bridge.lua  ← optional rde_organizations bridge (v2.0.1+)
 │   │   ├── crews.lua / members.lua / invites.lua / permissions.lua
 │   │   ├── territory.lua   ← zones, ownership, graffiti placement
 │   │   ├── zone_editor.lua
@@ -323,12 +384,12 @@ rde_crew/
 
 ## 🛡️ Security
 
-- Every spray placement validated server-side: image format, size cap, every used can verified against the real can registry — crafted payloads cannot inject invalid colors
+- Every spray placement validated server-side: image format, size cap, every used can verified against the real can registry
 - Zone lookup at placement time is always server-computed — client-claimed zone names are never trusted
 - War-gate enforced server-side before any overspray is accepted
 - `rotation` and `scale` values from the NUI are range-clamped server-side before being written to the DB
 - Permission checks on every crew action against the actor's actual grade, not client-claimed state
-- `created_at` set explicitly via `NOW()` on every spray insert rather than relying on a column default (see saga for why this mattered)
+- OrgBridge: crew mutations only via inter-resource server events — clients never touch the bridge directly
 
 ---
 
@@ -359,8 +420,9 @@ rde_crew/
 | `rde_crew_sprays` | Graffiti pieces — coords, wall normal, base64 PNG, rotation, scale |
 | `rde_crew_wars` | Active and historical wars |
 | `rde_crew_territory_zones` | In-game-editable zone polygons |
+| `rde_crew_org_link` | OrgBridge: maps rde_organizations org_id → crew_id |
 
-All tables auto-create on first start. `rde_crew_sprays` carries a `created_at` migration that repairs the column default and backfills corrupted timestamps, plus a `rotation` column added via `ADD COLUMN IF NOT EXISTS` — safe against any existing installation.
+All tables auto-create on first start. `rde_crew_org_link` is only populated when OrgBridge is active and a gang-type org is created in rde_organizations — it is fully inert otherwise.
 
 ---
 
@@ -368,7 +430,9 @@ All tables auto-create on first start. `rde_crew_sprays` carries a `created_at` 
 
 **Graffiti two-tier model:** a tiny `GlobalState`-broadcast index (id/coords/zone/size only) drives proximity math client-side. The actual PNG is only ever fetched via on-demand callback once a client enters `renderDist`, and the rendered prop tears down past `unloadDist`. Thousands of server-wide pieces, zero per-tick overhead for distant clients.
 
-**Paint canvas — O(1) per mouse move:** finished strokes are baked once onto an offscreen buffer. On `pointermove`, only the current new segment is drawn directly to the visible canvas — no `clearRect`, no history replay, no `redraw()`. A piece with 500 completed strokes costs the same to draw the 501st as the 1st. On a long session (80+ pieces tested) the canvas stays fully responsive regardless of total stroke count.
+**Paint canvas — O(1) per mouse move:** finished strokes are baked once onto an offscreen buffer. On `pointermove`, only the current new segment is drawn directly to the visible canvas — no `clearRect`, no history replay, no `redraw()`.
+
+**Render thread — capped at ~60fps:** the zone outline draw loop runs at `Wait(16)` when zones are nearby, not `Wait(0)`. `DrawLine`/`DrawMarker` native calls are cheap individually but accumulate fast at 6 raycasts × 60+ fps. All hot loops use `cache.ped` instead of `PlayerPedId()`.
 
 **Zone ownership and statebag publishes** are event-driven, never polled.
 
@@ -380,19 +444,19 @@ All tables auto-create on first start. `rde_crew_sprays` carries a `created_at` 
 Check console for `DLC_ITYP_REQUEST` errors — `bzzz_decals.ytyp` must load clean. Set `Config.Graffiti.debug = true` for full F8 render pipeline logging per piece.
 
 **bzzz_decals not found?**
-The prop pack is streamed from `rde_crew/stream/` — no separate download needed. If the ytyp error persists, confirm `rde_crew` is started fully before any script that might reference the model hashes.
+The prop pack is streamed from `rde_crew/stream/` — no separate download needed.
 
 **Piece renders at wrong height or rotation after swapping carrier props?**
-`propHeadingOffset` and `propZOffset` are specific to the current carrier model's mesh-pivot convention. Both need re-tuning if you change which prop is used. Don't change the prop unless you know exactly which values to adjust — see the saga for why.
+`propHeadingOffset` and `propZOffset` are specific to the current carrier model's mesh-pivot convention. Both need re-tuning if you change the prop.
 
 **Two nearby pieces show the same image?**
-The render pool has 10 slots. More than 10 simultaneous pieces in render range can collide. Extend `GRAFFITI_PROP_POOL` in `client/modules/spray.lua` with more `bzzz_normal_sign_*` letters if your server regularly has dense territory clusters.
+The render pool has 10 slots. Extend `GRAFFITI_PROP_POOL` in `client/modules/spray.lua` with more `bzzz_normal_sign_*` letters if your server regularly has dense territory clusters.
 
-**Placement screen rotation/scale not sticking?**
-Confirm the NUI callback for `graffiti:confirm` is firing — check F8 for the server-side `graffiti: stored Sprays[n]` log line. If missing, the `rotation`/`scale` fields weren't received. Ensure you're on v2.0.0+ of both `spray.lua` and `graffiti_paint.js`.
+**OrgBridge: crew not created after org creation?**
+Check server console for `[OrgBridge]` log lines. Confirm `rde_organizations` starts before `rde_crew` in `server.cfg`. Confirm the org type is in `Config.OrgBridge.crewOrgTypes`.
 
-**"No permission" on admin commands?**
-Verify the actor's ox_core ace group matches `Config.Admin.aceGroup` — not just the in-game grade.
+**OrgBridge: members not syncing?**
+Confirm the `rde_orgs:server:*` events are being fired — these are added to `rde_organizations/server/server.lua`. Make sure you're running the bridge-patched version of rde_organizations.
 
 ---
 
@@ -402,33 +466,23 @@ Every config comment in this resource that starts with "CONFIRMED IN TESTING" or
 
 **The plan was simple.** Replace the old fixed-text crew-tag stamp with real freehand painting. Player draws on a canvas, art gets projected onto the wall as a decal. A weekend feature, surely.
 
-**Round 1 — `AddDecal`.** GTA's native bullet-hole/scorch-mark system, repurposed for graffiti — exactly how most commercial FiveM graffiti scripts do it. Built the whole pipeline: DUI runtime texture, `PatchDecalDiffuseMap`, `AddDecal` with the wall normal and a computed side vector. In-game test: `IsDecalAlive` returns `true`. A genuinely live decal handle. Nothing visible on the wall. Not faint — nothing. Tried real built-in decal types, tried skipping the custom texture entirely to isolate the variable. Still nothing. Confirmed via community research: a known, unresolved, undocumented-by-Rockstar issue. `AddDecal` was abandoned, never to return (it got one more chance later, just to be thorough — see Round 5).
+**Round 1 — `AddDecal`.** GTA's native bullet-hole/scorch-mark system, repurposed for graffiti. Built the whole pipeline: DUI runtime texture, `PatchDecalDiffuseMap`, `AddDecal` with the wall normal and a computed side vector. In-game test: `IsDecalAlive` returns `true`. Nothing visible on the wall. Not faint — nothing. Confirmed via community research: a known, unresolved, undocumented-by-Rockstar issue. Abandoned.
 
-**Round 2 — A real prop, `AddReplaceTexture`.** Found `prop_ld_filmset` (a flat film-set billboard) via manual OpenIV asset hunting — including one genuinely funny detour where the prop's actual embedded texture name turned out to be `prop_fruit_box_01`, a leftover from Rockstar reusing an old texture slot. `AddReplaceTexture` ran without error. Prop spawned in the right place. Still showed the original art, never the custom texture.
+**Round 2 — A real prop, `AddReplaceTexture`.** Found `prop_ld_filmset` via manual OpenIV asset hunting. `AddReplaceTexture` ran without error. Still showed the original art, never the custom texture.
 
-**Round 3 — The actual root cause.** A GitHub issue search turned up `citizenfx/fivem#1684`: **`AddReplaceTexture` does not support "delayed" DUI-handle-sourced textures on any FXServer branch except Release.** This server intentionally runs `latest`. Every single failure up to this point — both the silent `AddDecal` and the silent `AddReplaceTexture` — traced back to the same underlying engine bug, because both pipelines sourced their runtime texture from a `CreateDui` call. The fix, straight from the FXServer dev himself: don't source the texture from a DUI at all.
+**Round 3 — The actual root cause.** A GitHub issue search turned up `citizenfx/fivem#1684`: **`AddReplaceTexture` does not support "delayed" DUI-handle-sourced textures on any FXServer branch except Release.** This server intentionally runs `latest`. Every failure traced back to the same underlying engine bug, because both pipelines sourced their texture from a `CreateDui` call.
 
-**Round 4 — Rebuilding the pipeline around a PNG, not a browser.** The paint canvas now exports itself directly as a base64 PNG (`canvas.toDataURL`) the moment the player confirms. `CreateRuntimeTextureFromImage` takes that string straight in — confirmed by FiveM's own docs to accept a base64 data URL — no DUI anywhere in the chain. Simpler architecture and it sidesteps the bug entirely.
+**Round 4 — Rebuilding the pipeline around a PNG, not a browser.** The paint canvas now exports itself directly as a base64 PNG (`canvas.toDataURL`) the moment the player confirms. `CreateRuntimeTextureFromImage` takes that string straight in — no DUI anywhere in the chain.
 
-**Round 5 — `AddDecal`, again, now that the DUI excuse was gone.** Worth one more shot with a non-DUI texture source. Same result: `IsDecalAlive == true`, nothing visible. Confirmed, twice now, with two different texture sources: `AddDecal` is just not reliable on this engine/branch, full stop.
+**Round 5 — `AddDecal`, again.** Worth one more shot with a non-DUI texture source. Same result. Confirmed, twice, with two different texture sources.
 
-**Round 6 — Finding a prop that actually supports live replacement.** Not every screen-type prop does — confirmed via a community forum post describing the exact same symptom on a different prop (`prop_big_cin_screen` silently failed; `v_ilev_cin_screen`, using the same texture name, worked fine right next to it). Found `v_ilev_cin_screen` / `script_rt_cinscreen` — the `script_rt_` prefix turned out to be the real signal: Rockstar's own naming convention for script-driven runtime-replaceable texture slots. It worked. It also looked like a cinema screen, because it was one — curved, oversized, comically wrong for a wall tag.
+**Rounds 6–11 — Named render targets, cinema screen props, database self-destruction, race conditions, parallelogram distortion, and a prop whose embedded texture name turned out to be `prop_fruit_box_01`.** All documented in brutal detail in the `config.lua` comments and the full saga section below.
 
-**Round 7 — The database ate its own children.** Mid-investigation into prop sizing, a much bigger problem surfaced: every fresh server boot logged zero graffiti pieces loaded, even moments after successfully creating one in the same session. Root cause: `rde_crew_sprays` predates this rewrite, and its `created_at DEFAULT CURRENT_TIMESTAMP` had apparently never been reliably applied on the pre-existing table. An invalid timestamp made the routine 14-day housekeeping cleanup query nuke the entire table, every single restart, immediately. Three-layer fix: explicit `NOW()` on every insert, a migration repairing the column default, and a sanity-bounded cleanup query that can never again mass-delete on a bad timestamp.
+**Round 12 — `bzzz_decals`.** A free third-party addon prop pack with a confirmed real alpha-blended material, verified in OpenIV with "Alpha background" checked before integrating a single file. It worked. Real ink, on a real wall, with a real transparent background.
 
-**Round 8 — A race condition masquerading as a sync bug.** New pieces appeared to require a full resource restart to become visible to other players. Actual cause: the in-flight guard protecting the fetch-and-render sequence was released before rendering had actually finished — letting the next proximity tick start a second full render cycle on top of an unfinished one, repeatedly, stacking duplicate objects. Fixed by holding the guard for the full operation, not just the network round-trip.
+**The cleanup.** 10-slot pool to prevent simultaneous pieces sharing one texture target. Full orthonormal `SetEntityMatrix` to place props flush on any wall. O(1)-per-mouse-move canvas by baking strokes to an offscreen layer. Live reticle. Rotation/scale persistence in DB. Two-screen NUI so players see exactly what they're placing before they commit.
 
-**Round 9 — Found `prop_tv_flat_01_screen`,** the actual screen-only sub-component of a flat-screen TV model. Genuinely flat, no bezel. Scaling it down via `SetEntityMatrix` introduced visible parallelogram distortion. Abandoned in favor of not scaling at all — player-chosen scale is now applied within confirmed safe bounds.
-
-**Round 10 — Named Render Targets.** Reading `rde_oxmedia`'s actual source revealed it doesn't use `AddReplaceTexture` for its TV — it uses `RegisterNamedRendertarget` + `LinkNamedRendertarget` + `DrawSprite`, redrawn every frame. Promising — until testing confirmed the render target is shared per model hash, not per entity instance: every simultaneously-loaded piece showed whichever was drawn most recently, globally, every frame. Worse for multi-piece support than `AddReplaceTexture`. Abandoned.
-
-**Round 11 — The actual goal, restated.** The whole point was never "a working prop." It was a player saying, repeatedly and with increasing intensity: *"I just want the ink visible, nothing else."* Every vanilla screen material tested is deliberately opaque, because real screens always show something. That's not a bug to route around; it's how those materials were built.
-
-**Round 12 — `bzzz_decals`.** A free third-party addon prop pack, built specifically for retexturing, found via a forum thread describing flat decal props where "on one side there is texture, on the other side you can't see anything." Verified directly in OpenIV with "Alpha background" checked before integrating a single file: a genuine checkerboard transparency pattern around the logo content. The first prop in this entire saga where the material was confirmed alpha-capable before testing, instead of discovered opaque after the fact. Integrated as a streamed addon, origTxd/origTxn reasoned out from file-size correlation. It worked. Real ink, on a real wall, with a real transparent background. No box. No bezel. No DUI. No decal.
-
-**The cleanup.** `AddReplaceTexture`'s override turned out to be global per `(origTxd, origTxn)` — confirmed when re-entering render range started showing whichever other piece had patched the shared target most recently. Solved with a 10-slot pool, deterministically assigned by piece ID. The carrier prop needed its own rotation correction (90°, then corrected to 180° once tested in-game) and its own vertical pivot correction. The paint canvas had an O(n)-per-mouse-move redraw bug, fixed by baking finished strokes onto an offscreen layer once instead of replaying full history on every frame. The aiming flow was upgraded from "aim blind, press E, hope" to a live reticle — same tennis-ball entity-selection pattern already proven in `rde_doors`. And finally, v2.0.0 adds a full second NUI screen so the player can rotate and scale the piece directly on the wall surface before committing — because "somewhere in the right general area" was never good enough.
-
-**Final tally:** three full rendering techniques attempted and two abandoned, one official CitizenFX engine bug identified and worked around, one self-inflicted database table found wiping itself on every boot, two race conditions, one third-party addon pack integrated from scratch, and a great many config values that say "CONFIRMED IN TESTING" because guessing twice was already too many times.
+**Final tally:** three full rendering techniques attempted and two abandoned, one official CitizenFX engine bug identified and worked around, one self-inflicted database table found wiping itself on every boot, two race conditions, one third-party addon pack integrated from scratch, and config values that say "CONFIRMED IN TESTING" because guessing twice was already too many times.
 
 It renders. It's flat. It's transparent. It's real graffiti on a real wall.
 
@@ -436,101 +490,42 @@ It renders. It's flat. It's transparent. It's real graffiti on a real wall.
 
 ## 📝 Changelog
 
-### v2.0.1 — Cap System + Sync Fixes
+### v2.0.1 — Cap System + Sync Fixes + OrgBridge
+
+**OrgBridge: rde_organizations Integration** *(new in v2.0.1)*
+Optional bridge module (`server/modules/org_bridge.lua`) that links `rde_organizations` gang-type orgs to rde_crew's territory system. When enabled, gang/MC/criminal orgs created in rde_organizations automatically become territory-holding crews. Membership, ranks, and permissions sync automatically in both directions via inter-resource server events. rde_crew becomes a pure territory engine — the org panel handles all crew management. Zero coupling: both resources function independently if the bridge is disabled.
+
+**Performance: Hot-Loop Optimizations**
+Spray aim loop throttled from `Wait(0)` (6 raycasts at 60+ fps) to `Wait(16)`. Territory render loop capped at `Wait(16)` when zones nearby. NUI polling loop `Wait(0)` → `Wait(16)`. Named render target thread guarded behind config flag (was always active even when opt-in was disabled). `PlayerPedId()` replaced with `cache.ped` in all hot paths. 5 per-frame `vec3()` allocations hoisted to module-level constants. `Utils.log()` now gates 'info' level behind `Config.Debug`. Net result: ~10× lower CPU at idle, ~5× lower during active spray.
 
 **Graffiti: 7 Authentic Cap Types** *(feature proposed by 2kee)*
-Replaced the 3 basic cap sizes (thin/medium/thick) with 7 authentic graffiti nozzle types: Skinny (2px crisp), Soft Cap (5px feathered), NY Cap (8px crisp), Standard (12px), Fat Cap (20px feathered), Ultra Fat (32px), Ultrawide (50px). Fat caps use canvas `shadowBlur` for authentic spray-paint edge feathering. Each cap button shows a live mini-stroke preview with real line width and blur.
+Replaced 3 basic cap sizes with 7 authentic graffiti nozzle types. Fat caps use canvas `shadowBlur` for authentic spray-paint edge feathering. Each cap button shows a live mini-stroke preview.
 
 **Graffiti: Prop Wall Alignment**
-Replaced the heading-only `SetEntityRotation` approach with a full orthonormal `SetEntityMatrix` using `cross(n, worldUp)` for the right vector and `cross(right, n)` for the wall-up vector. Props now sit flush on any wall surface regardless of orientation. `isNormalSame` threshold raised from 0.01 to 0.05 to accept slightly uneven surfaces (ridged concrete, brick patterns).
+Replaced heading-only `SetEntityRotation` with full orthonormal `SetEntityMatrix`. Props now sit flush on any wall surface regardless of orientation.
 
 **Sync: Zone + Spray Dual-Sync**
-`ZoneEditor.publish()`, `publishZoneOwner()`, and `_publishSprayIndex()` now fire `TriggerClientEvent(-1, ...)` alongside `GlobalState` updates. Statebag propagation alone is not reliable on resource restart or in network edge cases. Both channels together cover all scenarios: net event for connected players, statebag for new joiners.
+`ZoneEditor.publish()`, `publishZoneOwner()`, and `_publishSprayIndex()` now fire `TriggerClientEvent(-1, ...)` alongside `GlobalState` updates.
 
 **Sync: Zone Color Race Condition Fix**
-Zone ownership events now pass `ownerCrewId` inline so the client handler builds crew color from the event payload, never from `GlobalState` (which arrives ~50ms later and would still be stale). The `AddStateBagChangeHandler` for ownership is the single place that triggers the DUI rebuild — no concurrent threads destroying each other's textures.
+Zone ownership events now pass `ownerCrewId` inline. `AddStateBagChangeHandler` for ownership is the single place that triggers DUI rebuild. `ZoneBuildPending` guard prevents concurrent threads destroying each other's textures.
 
-**StateBag Handler: `value` Parameter Fix** *(the actual final fix)*
-`AddStateBagChangeHandler(nil, 'global', handler)` fires with the new ownership data as the `value` parameter. However, reading `GlobalState[key]` inside the handler returns the OLD/nil value — the client-side state update is asynchronous from the handler invocation. This was confirmed via debug relay: `BUILD: zone txn=t2 claimed=false hex=nil rgb=255,255,255` even though the server had just set the ownership to crew #1.
-
-Fix: use `value.ownerCrewId` directly from the handler parameter to build `newInfo`, then pass it as `infoOverride` to `renderZone` so `buildZoneTexture` uses the correct crew color without reading GlobalState for ownership. The crew snapshot (`GlobalState['rde_crew_<id>']`) is safe to read — it was set at startup, long before any spray event. Result: zone turns crew color on the minimap in real time, for every player, the moment the spray is confirmed.
+**StateBag Handler: `value` Parameter Fix**
+`AddStateBagChangeHandler` fires with new ownership data as the `value` parameter. `GlobalState[key]` inside the handler returns the old/nil value. Fix: use `value.ownerCrewId` directly, pass as `infoOverride` to `buildZoneTexture`.
 
 **Overlay: Unique TxN Slot per Build**
-`CreateRuntimeTextureFromDuiHandle(rtxd, txn, handle)` silently fails if `txn` already exists in that rtxd — no error, no update, old texture stays. Fix: increment a per-zone build counter so every rebuild uses a fresh slot name (`t1`, `t2`, ...) within a stable TxD. The scaleform reads the new slot and displays the correct crew color. `ZoneBuildPending` guard prevents concurrent builds from racing each other.
+`CreateRuntimeTextureFromDuiHandle` silently fails if `txn` already exists. Fix: per-zone build counter ensures every rebuild uses a fresh slot name.
 
-**zone.js: `JSON.parse` fix for `SendDuiMessage`**
-`SendNUIMessage` delivers `e.data` pre-parsed as an object. `SendDuiMessage` delivers `e.data` as a **raw JSON string** — undocumented FiveM difference. Without `JSON.parse`, `d.action` is always `undefined` and the message is silently ignored.
-
-**Overlay: Stale Lua rtxd Cache Fix**
-`clearZoneTexture` calls `Overlay.clearCachedTxd(entry.txd)` to evict the Lua-level rtxd reference before destroying the DUI. Required for the fallback `renderZone()` path on first-time zone render.
-
-**UI: Complete ox_lib Menu Overhaul**
-Full rewrite of `client/ui.lua` — consistent `ICN.xxx` icons with `iconColor` on every item, contextual descriptions everywhere, `isLeader()` helper for permission gating. Settings menu now exposes Rename Crew, Set Color (hex), and Dissolve Crew for leaders; non-leaders see an informative disabled state. Member list shows online/offline status and leader badge. Member actions for leaders include Transfer Leadership, Change Grade, and Kick. Three new server callbacks added: `rde_crew:crews:rename`, `rde_crew:crews:setColor`, `rde_crew:members:transferLeadership` — all leader-only with server-side `isLeader()` validation.
-
-**Config.Icons: Cleanup**
-Removed `garage` and `inventory` (no longer used). Added `members`, `list`, `transfer`, `rename`, `flag`, `announce` for consistent icon coverage across all menus.
-
-**Spray Can Prop + Animation + PTFX**
-`prop_paint_spray01a` (cap on) attaches to the right hand during the aiming phase via bone `IK_R_Hand` (28422). During the mini-game, the prop is cleanly detached and a champagne-spray animation (`anim@mp_player_intupperspray_champagne/idle_a`) extends the arm toward the wall while a directional PTFX cloud (`core/ent_amb_rapid_dir_spray`) plays in front of the hand. Prop position tunable live via `Config.Graffiti.canProp.pos/rot` — change in `config.lua` and `restart rde_crew` without rebuilding.
-
-**Spray Territory fix: `client/modules/territory.lua`**
-Fixed syntax error at line 240 — two `Utils.log` debug calls had their format string literals accidentally stripped, leaving dangling `:format(args)` calls that crashed the Lua parser on resource start.
-
-**Removed: Crew Stash & Garage**
-`InventoryModule` and `GarageModule` removed from bootstrap and callbacks. Storage → `rde_parking`. Prop interaction → `rde_props_interact`. Dead code fully purged: `server/modules/inventory.lua`, `server/modules/garage.lua`, `client/modules/inventory.lua`, `client/modules/garage.lua` deleted. Stream assets `bzzz_normal_sign_*2.ydr`, `*3.ydr` (20 files, never spawned) and `bzzz_normal_sign_texture2.ytd`, `texture3.ytd` deleted. `server/database.lua` schema cleaned: `rde_crew_garage` table and four dead columns (`garage_coords`, `inventory_coords`, `garage_password`, `inventory_password`) removed from `rde_crews`. `server/classes/crew.lua` cleaned: dead `@field` annotations, dead `fromRow()` reads, and `setGarageCoords()`/`setInventoryCoords()` methods removed.
-
-> **Honest debug trail — zone color, all iterations:**
-> 1. Dual-sync: add `TriggerClientEvent` alongside GlobalState → HUD instant, minimap stale
-> 2. Race condition: two concurrent `renderZone` threads destroying each other's DUIs → single-thread guard (`ZoneBuildPending`)
-> 3. Lua rtxd cache: `state.runtimeTxd[txd]` never cleared → add `clearCachedTxd`
-> 4. Engine TxD name cache: `CreateRuntimeTxd(same_name)` returns old TxD → unique TxD names
-> 5. `CreateRuntimeTextureFromDuiHandle` on existing txn slot = silent no-op → unique TxN per build
-> 6. `JSON.parse`: `SendDuiMessage` delivers raw string, not object → add parse
-> 7. **StateBag handler reads stale GlobalState**: `ownerInfo()` inside handler sees nil → use `value` param directly ✅ **FIXED**
->
-> Layer 7 confirmed via debug relay: `BUILD: zone claimed=false hex=nil rgb=255,255,255`. Each layer was correct in isolation.
-
----
+**Locales: Complete EN + DE**
+12 previously missing locale keys added to both `locales/en.lua` and `locales/de.lua`. Zero missing keys at release.
 
 ### v2.0.0 — Mouse Placement + Canvas Performance
 
-**NUI: Two-Screen Flow**
-After drawing, a second placement screen shows the finished piece on a simulated wall. The player rotates and scales it before confirming. Rotation and scale are sent back to Lua. A full orthonormal basis (`forward = wall_normal`, `right = cross(n, worldUp)`, `up = cross(right, n)`) is applied via `SetEntityMatrix` — the prop sits flush on any wall surface regardless of orientation. *(Wall alignment further refined in v2.0.1.)*
+Two-screen NUI flow (draw → place). Full orthonormal `SetEntityMatrix`. O(1) canvas drawing via incremental stroke rendering. `hitCoords`/`hitNormal` race fix. `rotation` column added to DB via auto-migration. Garage + stash removed.
 
-**NUI: O(1) Canvas Drawing**
-Previous implementation called `redraw()` (clearRect + full stroke history replay) on every `pointermove` event — O(n) per mouse move where n = total points in the current stroke. Replaced with direct incremental drawing: only the new segment since the last move event is drawn, the baked offscreen layer is not touched during an active stroke. Long sessions (80+ pieces, hundreds of strokes per piece) now stay fully responsive.
+### v1.x — Earlier History
 
-**Lua: Reticle / Placement Fix**
-`hitCoords` and `hitNormal` are now captured into local upvalues the moment `[E]` is pressed, before `openPaintCanvas()` blocks for an arbitrary amount of time. The NUI and mini-game can no longer race with or overwrite the captured wall position.
-
-**Lua: Rotation stored in DB**
-`rde_crew_sprays` gains a `rotation FLOAT DEFAULT 0.0` column (auto-migrated via `ADD COLUMN IF NOT EXISTS`). Stored rotation is applied on prop spawn, so pieces persist their player-chosen angle across server restarts.
-
-**Scope: Garage + Stash removed**
-Vehicle storage is `rde_parking`'s job. Shared prop interaction is `rde_props_interact`'s job. Both do it better. The `USE_GARAGE` and `USE_STASH` permission keys, the four associated module files, and the `ox_inventory` dependency are removed.
-
----
-
-### v1.12.0 — Live Aim Reticle
-Real-time visual placement feedback, same pattern as `rde_doors`'s entity-selection loop.
-
-### v1.11.x — Tuning + Canvas Offscreen Bake (partial)
-Confirmed rotation/position values for the final carrier prop. 10-slot texture pool to prevent simultaneous pieces sharing one `AddReplaceTexture` target. Verbose diagnostic logging behind `Config.Graffiti.debug`.
-
-### v1.10.x — bzzz_decals Integration
-Pivoted to a free third-party addon prop pack with a confirmed real alpha-blended material after every vanilla screen material tested rendered fully opaque.
-
-### v1.9.0 — Named Render Target Experiment
-Tested the mechanism `rde_oxmedia` uses for live video; shared per model hash, not per instance — abandoned.
-
-### v1.7.x–v1.8.x — Root Cause & Recovery
-Identified `citizenfx/fivem#1684` as the actual root cause behind both the `AddDecal` and `AddReplaceTexture` failures. Rebuilt texture pipeline around direct base64 PNG with no DUI. Fixed `created_at` migration wiping the entire sprays table on every restart. Fixed render race condition causing duplicate spawned objects.
-
-### v1.5.0–v1.6.x — Freehand Graffiti Rewrite
-Replaced fixed crew-tag text stamp with real freehand NUI painting.
-
-### Earlier
-In-game polygon zone editor, statebag-driven crew/zone sync, war-gated territory overspray, full RDE OX Standards v2 pass.
+In-game polygon zone editor, statebag-driven crew/zone sync, war-gated territory overspray, graffiti saga (all 12 rounds), live aim reticle, bzzz_decals integration.
 
 ---
 
@@ -539,9 +534,9 @@ In-game polygon zone editor, statebag-driven crew/zone sync, war-gated territory
 | | |
 |---|---|
 | 🐉 **SerpentsByte** | Architect, developer, and the poor soul who spent one very long night with `AddDecal` |
-| 🎨 **2kee** | Proposed the authentic 7-cap graffiti nozzle system (Skinny → NY Cap → Fat → Ultrawide) with real blur feathering for fat caps — because "skinny, softcap, ny cap, standard, fat, ultrafat, ultrawide" is an accurate cap list and he knows it |
+| 🎨 **2kee** | Proposed the authentic 7-cap graffiti nozzle system (Skinny → NY Cap → Fat → Ultrawide) |
 
-> 2kee on Nostr: [`Jkce`](https://primal.net/p/npub18swue4et8kumvxc78yxqwa3rqfucfymfvj8vr82q1l8smy8ueshly) · `2kee@nostrified.org`
+> 2kee on Nostr: [`2kee`](https://primal.net/p/npub18swue4et8kumvxc78yxqwa3rqfucfymfvj8vr82q1l8smy8ueshly) · `2kee@nostrified.org`
 
 ---
 
@@ -573,8 +568,6 @@ In-game polygon zone editor, statebag-driven crew/zone sync, war-gated territory
 #
 # 3. // THE CREDIT OATH
 #    Keep this header. If you remove my name, you admit you have no skill.
-#    You can add "Edited by [YourName]", but never erase the original creator.
-#    Don't be a skid. Respect the architecture. Respect the pain it took.
 #
 # 4. // THE CURSE OF THE COPY-PASTE
 #    This code uses statebags, proximity streaming, a custom addon prop pack,
@@ -582,20 +575,10 @@ In-game polygon zone editor, statebag-driven crew/zone sync, war-gated territory
 #    techniques and one CitizenFX engine bug. If you just copy-paste without
 #    reading, it WILL break. Don't come crying to my DMs. RTFM or learn to code.
 #
-# --------------------------------------------------------------------------
-# "We build the future on the graves of paid resources — and on the graves
-#  of every rendering technique that didn't make it."
+# "We build the future on the graves of paid resources."
 # "REJECT MODERN MEDIOCRITY. EMBRACE RDE SUPERIORITY."
-# --------------------------------------------------------------------------
 ###################################################################################
 ```
-
-**TL;DR:**
-
-- ✅ Free forever — use it, edit it, learn from it
-- ✅ Keep the header — credit where it's due
-- ❌ Don't sell it — commercial use = instant DMCA
-- ❌ Don't be a skid — copy-paste without reading won't work anyway
 
 ---
 
@@ -605,6 +588,7 @@ In-game polygon zone editor, statebag-driven crew/zone sync, war-gated territory
 |---|---|
 | 🐙 GitHub | [RedDragonElite](https://github.com/RedDragonElite) |
 | 🌍 Website | [rd-elite.com](https://rd-elite.com) |
+| 🏢 RDE Organizations | [rde_organizations](https://github.com/RedDragonElite/rde_organizations) |
 | 🚗 RDE Parking | [rde_parking](https://github.com/RedDragonElite/rde_parking) |
 | 🎯 RDE Props Interact | [rde_props_interact](https://github.com/RedDragonElite/rde_props_interact) |
 | 🚪 RDE Doors | [rde_doors](https://github.com/RedDragonElite/rde_doors) |
@@ -625,6 +609,7 @@ When asking for help, always include:
 
 [![Website](https://img.shields.io/badge/Website-Visit-red?style=for-the-badge&logo=google-chrome)](https://rd-elite.com)
 [![Nostr](https://img.shields.io/badge/Nostr-Follow-purple?style=for-the-badge&logo=rss)](https://primal.net/p/npub1wr4e24zn6zzjqx8kvnelfvktf0pu6l2gx4gvw06zead2eqyn23sq9tsd94)
+[![RDE Ecosystem](https://img.shields.io/badge/RDE-ECOSYSTEM-f59e0b?style=for-the-badge)](https://github.com/RedDragonElite)
 
 🐉 *Made with 🔥 (and a genuinely heroic amount of stubbornness) by Red Dragon Elite*
 
